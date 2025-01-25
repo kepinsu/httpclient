@@ -31,6 +31,5 @@ func chain(endpoint Doer, middlewares ...Decorator) Doer {
 	for i := len(middlewares) - 2; i >= 0; i-- {
 		h = middlewares[i](h)
 	}
-
 	return h
 }

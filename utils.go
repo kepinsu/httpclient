@@ -1,10 +1,12 @@
 package httpclient
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"regexp"
 	"strings"
@@ -13,6 +15,8 @@ import (
 var (
 	jsonCheck = regexp.MustCompile(`(?i:(application|text)/(.*json.*)(;|$))`)
 	xmlCheck  = regexp.MustCompile(`(?i:(application|text)/(.*xml.*)(;|$))`)
+
+	quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 )
 
 // https://github.com/golang/go/issues/51115
@@ -44,6 +48,22 @@ func readAllWithLimit(r io.Reader, maxSize int) ([]byte, error) {
 	}
 
 	return result, nil
+}
+
+func encodeMultipart(body *MultipartBody) (string, io.Reader, error) {
+	buf := bytes.NewBuffer(nil)
+	w := multipart.NewWriter(buf)
+
+	for _, mf := range body.List {
+		if err := addMultipartFormField(w, mf); err != nil {
+			return "", buf, err
+		}
+	}
+	return w.Boundary(), buf, w.Close()
+}
+
+func escapeQuotes(s string) string {
+	return quoteEscaper.Replace(s)
 }
 
 func parseResponse(

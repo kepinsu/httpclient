@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -63,6 +64,19 @@ func (c *Client) newRequestWithContext(ctx context.Context,
 	case nil:
 	case string:
 		reader = bytes.NewBufferString(body)
+	case *MultipartBody:
+		var (
+			err      error
+			boundary string
+		)
+		boundary, reader, err = encodeMultipart(body)
+		if err != nil {
+			return nil, err
+		}
+		if config.headers == nil {
+			config.headers = http.Header{}
+		}
+		config.headers.Add(contentTypeHeaderKey, fmt.Sprintf("%s; boundary=%s", body.Boundary, boundary))
 	default:
 		if config.isJson {
 			payload, err := json.Marshal(body)

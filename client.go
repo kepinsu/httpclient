@@ -145,7 +145,7 @@ func (c *Client) Head(
 	return c.createAndDo(ctx, path, http.MethodHead, nil, nil, resultError, opts...)
 }
 
-// Do method returns the http.Request if your need to do your own request.
+// Do method returns the http.Request if your need to send your own request.
 func (c *Client) Do(r *http.Request) (*http.Response, error) {
 	// Apply all Decorators pattern
 	do := chain(c.httpClient, c.decorators...)

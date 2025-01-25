@@ -1,66 +1,25 @@
-<p align="center">
-<h1 align="center">httpcleint</h1>
-<p align="center">Simple HTTP and REST client library for Go without dependency</p>
-</p>
+package httpclient_test
 
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
 
-## Features
+	"github.com/kepinsu/httpclient"
+)
 
-  * GET, POST, PUT, DELETE, HEAD. Can be extended in the future
-  * Simple and chainable methods for settings and request
-  * [Request] Body can be `string`, `[]byte`, `struct`, `map`, `slice` and `io.Reader` too
-  * Can add any *middlewares* you want in the httpclient
-
-## Installation
-
-httpclient supports Go Modules. Run go mod tidy in your project's directory to collect the required packages automatically.
-
-```bash
-go get github.com/kepinsu/httpclient
-```
-
-Or with imports:
-
-```bash
-// Import httpclient into your code and refer it as `httpclient`.
-import "github.com/kepinsu/httpclient"
-```
-
-## Usage
-
-### Simple POST
-
-```go
-// Create the client
-c ,err := httpclient.NewClient("")
-if err !=nil{
-  // handle your error
+func Example_get() {
+	// Create a http client
+	client, err := httpclient.NewClient("http://example.com")
+	if err != nil {
+		fmt.Println("fail to setup the client", err)
+		return
+	}
+	client.Get(context.Background(), "", nil, nil)
 }
 
-// My result structure
-type Result struct{
-  ...
-}
-
-// My error result structure if your api return a error
-type ErrorResult struct{
-  ...
-}
-
-var result Result
-var errorresult ErrorResult
-
-
-httpresponse , err :=c.Post(context.Todo(), "/endpoint", body , &result, &errorresult, 
-  // Say this request is in json
-  httpclient.WithIsJSON())
-// handle the error or the result
-...
-```
-
-### Simple POST with Multipart body
-
-```go
+func Example_post_Multipart() {
 	// Create a http client
 	client, err := httpclient.NewClient("http://example.com")
 	if err != nil {
@@ -85,11 +44,10 @@ httpresponse , err :=c.Post(context.Todo(), "/endpoint", body , &result, &errorr
 
 	// Want the response in JSON decode
 	client.Post(context.Background(), "", m, nil, nil, httpclient.WithIsJson())
-```
+}
 
-### Simple Decorator
+func Example_delete_WithDecorators() {
 
-```go
 	// Random Decorator like Logging
 	var logger httpclient.Decorator = func(d httpclient.Doer) httpclient.Doer {
 		return httpclient.DoerFunc(func(r *http.Request) (*http.Response, error) {
@@ -106,4 +64,5 @@ httpresponse , err :=c.Post(context.Todo(), "/endpoint", body , &result, &errorr
 
 	// Want the response in JSON decode
 	client.Delete(context.Background(), "", nil, nil, nil, httpclient.WithIsJson())
-```
+
+}

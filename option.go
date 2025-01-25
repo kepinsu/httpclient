@@ -43,7 +43,7 @@ func WithUserAgent(u string) ClientsOption {
 
 // WithDecorators is to add custom Decorators for http call
 // Is more like http middlewares
-func WithDecorator(decorators []Decorator) ClientsOption {
+func WithDecorator(decorators ...Decorator) ClientsOption {
 	return func(cc *clientConfig) {
 		cc.Decorators = decorators
 	}

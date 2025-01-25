@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +29,15 @@ type ProblemDetails struct {
 type Policies struct {
 	Name xml.Name `json:"-" xml:"policies"`
 	Type string   `json:"type,omitempty" xml:"type,omitempty"`
+}
+
+// Random Decorator like Logging
+func WithLogger() Decorator {
+	return func(d Doer) Doer {
+		return DoerFunc(func(r *http.Request) (*http.Response, error) {
+			return d.Do(r)
+		})
+	}
 }
 
 func TestNewClient(t *testing.T) {
@@ -53,7 +63,6 @@ func TestNewClient(t *testing.T) {
 					WithSizeLimit(100),
 					// user agent test
 					WithUserAgent("test"),
-					WithDecorator([]Decorator{}),
 					WithTransport(&http.Transport{}),
 				},
 			},
@@ -411,74 +420,8 @@ func TestClient_Delete(t *testing.T) {
 	// Prepare fake http request here
 	mux := http.NewServeMux()
 	// Prepare the handler
-	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-
-	})
-	s := httptest.NewServer(mux)
-
-	type fields struct {
-		baseURL    string
-		httpClient *http.Client
-		decorators []Decorator
-		limitSize  int
-		userAgent  string
-	}
-	type args struct {
-		ctx         context.Context
-		path        string
-		body        any
-		result      any
-		resultError any
-		opts        []RequestOption
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    Response
-		wantErr bool
-	}{
-		{
-			name: "nok case - missing context.context",
-			fields: fields{
-				baseURL:    s.URL,
-				httpClient: &http.Client{},
-				limitSize:  500,
-			},
-			args: args{
-				ctx: nil,
-			},
-			wantErr: true,
-		}}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{
-				baseURL:    tt.fields.baseURL,
-				httpClient: tt.fields.httpClient,
-				decorators: tt.fields.decorators,
-				limitSize:  tt.fields.limitSize,
-				userAgent:  tt.fields.userAgent,
-			}
-			got, err := c.Delete(tt.args.ctx, tt.args.path, tt.args.body, tt.args.result, tt.args.resultError, tt.args.opts...)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Client.Delete() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Client.Delete() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestClient_Put(t *testing.T) {
-	path := "/result"
-
-	// Prepare fake http request here
-	mux := http.NewServeMux()
-	// Prepare the handler
-	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-
+	mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
 	})
 	s := httptest.NewServer(mux)
 
@@ -516,6 +459,18 @@ func TestClient_Put(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "ok case - the endpoint return 204 status",
+			fields: fields{
+				baseURL:    s.URL,
+				httpClient: &http.Client{},
+			},
+			args: args{
+				ctx:         context.Background(),
+				path:        path,
+				resultError: &ProblemDetails{},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -526,13 +481,169 @@ func TestClient_Put(t *testing.T) {
 				limitSize:  tt.fields.limitSize,
 				userAgent:  tt.fields.userAgent,
 			}
-			got, err := c.Put(tt.args.ctx, tt.args.path, tt.args.body, tt.args.result, tt.args.resultError, tt.args.opts...)
+			_, err := c.Delete(tt.args.ctx, tt.args.path, tt.args.body, tt.args.result, tt.args.resultError, tt.args.opts...)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Client.Delete() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
+}
+
+func TestClient_Put(t *testing.T) {
+	path := "/result"
+
+	// Prepare fake http request here
+	mux := http.NewServeMux()
+	// Prepare the handler
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		// Check if we don't receive multipart request
+		reader, err := r.MultipartReader()
+		if err != nil {
+			// return any a problemDetails here
+			w.Header().Add(contentTypeHeaderKey, "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(ProblemDetails{
+				Status:   http.StatusBadRequest,
+				Instance: r.URL.Path,
+			})
+			return
+		}
+		nextPart, err := reader.NextPart()
+		if err != nil {
+			// return any a problemDetails here
+			w.Header().Add(contentTypeHeaderKey, "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(ProblemDetails{
+				Status:   http.StatusBadRequest,
+				Instance: r.URL.Path,
+			})
+			return
+		}
+		if nextPart == nil {
+			// return any a problemDetails here
+			w.Header().Add(contentTypeHeaderKey, "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(ProblemDetails{
+				Status:   http.StatusBadRequest,
+				Instance: r.URL.Path,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	s := httptest.NewServer(mux)
+
+	// Prepare multipart Body
+	m := NewMultipartBody()
+	m.SetMultipartFields(
+		MultipartField{
+			Param:       "uploadManifest1",
+			FileName:    "upload-file-1.json",
+			ContentType: "application/json",
+			Reader:      strings.NewReader(`{"input": {"name": "Uploaded document 1", "_filename" : ["file1.txt"]}}`),
+		},
+		MultipartField{
+			Param:       "uploadManifest2",
+			ContentType: "application/json",
+			ContentID:   "up",
+			Reader:      strings.NewReader(`{"input": {"name": "random file"}}`),
+		})
+
+	type fields struct {
+		baseURL    string
+		httpClient *http.Client
+		decorators []Decorator
+		limitSize  int
+		userAgent  string
+	}
+	type args struct {
+		ctx         context.Context
+		path        string
+		body        any
+		result      any
+		resultError any
+		opts        []RequestOption
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    Response
+		wantErr bool
+	}{
+		{
+			name: "nok case - missing context.context",
+			fields: fields{
+				baseURL:    s.URL,
+				httpClient: &http.Client{},
+				limitSize:  500,
+			},
+			args: args{
+				ctx: nil,
+			},
+			wantErr: true,
+		},
+		{
+			name: "nok case - multipart request without content, the server refuse but not problemDetails in args",
+			fields: fields{
+				baseURL:    s.URL,
+				httpClient: &http.Client{},
+			},
+			args: args{
+				ctx:  context.Background(),
+				path: path,
+				body: NewMultipartBody(),
+				// Want the response in application/json
+				opts: []RequestOption{WithIsJson()},
+			},
+			wantErr: true,
+		},
+		{
+			name: "ok case - multipart request without content, the server refuse and send problemDetails",
+			fields: fields{
+				baseURL:    s.URL,
+				httpClient: &http.Client{},
+			},
+			args: args{
+				ctx:         context.Background(),
+				path:        path,
+				body:        NewMultipartBody(),
+				resultError: &ProblemDetails{},
+				// Want the response in application/json
+				opts: []RequestOption{WithIsJson()},
+			},
+		},
+		{
+			name: "ok case - multipart request with content, the server accept",
+			fields: fields{
+				baseURL:    s.URL,
+				httpClient: &http.Client{},
+				decorators: []Decorator{WithLogger()},
+			},
+			args: args{
+				ctx:         context.Background(),
+				path:        path,
+				body:        m,
+				resultError: &ProblemDetails{},
+				// Want the response in application/json
+				opts: []RequestOption{WithIsJson()},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				baseURL:    tt.fields.baseURL,
+				httpClient: tt.fields.httpClient,
+				decorators: tt.fields.decorators,
+				limitSize:  tt.fields.limitSize,
+				userAgent:  tt.fields.userAgent,
+			}
+			_, err := c.Put(tt.args.ctx, tt.args.path, tt.args.body, tt.args.result, tt.args.resultError, tt.args.opts...)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Client.Put() error = %v, wantErr %v", err, tt.wantErr)
 				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Client.Put() = %v, want %v", got, tt.want)
 			}
 		})
 	}
